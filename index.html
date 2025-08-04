@@ -2,28 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pokémon Guide</title>
-  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <h1>Pokémon Guide</h1>
-  <div class="precache-container">
-  <button onclick="precacheAll()">Pre-cache alt for offline bruk</button>
-</div>
   <label for="version-select">Spill:</label>
   <div id="version-select-container"></div>
 
-  <button onclick="showRegionalDex()">📘 Regional Pokédex</button>
-  <br /><br />
-  <script>
-function precacheAll() {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({type: 'PRECACHE_ALL'});
-  }
-}
-</script>
+  <button id="regional-dex-btn">📘 Regional Pokédex</button>
 
   <h2>Områder</h2>
   <div id="location-list"></div>
@@ -31,8 +19,8 @@ function precacheAll() {
   <h2>Pokémon</h2>
   <div id="encounters"></div>
 
-  <script src="js/app.js"></script>
-
+  <script type="module" src="js/app.js"></script>
+  <div id="debug-log" style="position: fixed; bottom: 0; left: 0; right: 0; max-height: 150px; overflow-y: auto; background: #111; color: #eee; font-family: monospace; font-size: 12px; padding: 5px; z-index: 9999;"></div>
 
 </body>
 </html>
