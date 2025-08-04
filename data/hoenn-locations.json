@@ -1,0 +1,9 @@
+[
+  { "name": "Route 101", "slug": "hoenn-route-101-area" },
+  { "name": "Route 102", "slug": "hoenn-route-102-area" },
+  { "name": "Route 103", "slug": "hoenn-route-103-area" },
+  { "name": "Route 104", "slug": "hoenn-route-104-area" },
+  { "name": "Petalburg Woods", "slug": "petalburg-woods-area" },
+  { "name": "Granite Cave 1F", "slug": "granite-cave-1f" },
+  { "name": "Granite Cave B1F", "slug": "granite-cave-b1f" }
+]
