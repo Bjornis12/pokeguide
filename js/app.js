@@ -1,13 +1,11 @@
 let currentVersion = localStorage.getItem("currentVersion") || "ruby";
 let currentRegion = null;
 let dexMode = "regional"; // "regional" eller "national"
+const pokemonIdCache = {};
 const locationCache = {};
 let allLocations = [];
 let dexEntries = [];
 let dexNumbers = {}; // name -> dex number i nåværende dex
-
-// Cache max alder i ms (24 timer)
-const CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
 
 const versionToRegion = {
   red: "kanto",
@@ -47,99 +45,77 @@ const regionData = {
     id: 1,
     name: "Kanto",
     versions: ["red","blue","yellow","firered","leafgreen"],
+    originalVersions: ["red","blue","yellow"],
+    remakes: ["firered","leafgreen"],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/2"
   },
   johto: {
     id: 2,
     name: "Johto",
     versions: ["gold","silver","crystal"],
+    originalVersions: ["gold","silver","crystal"],
+    remakes: [],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/3"
   },
   hoenn: {
     id: 3,
     name: "Hoenn",
     versions: ["ruby","sapphire","emerald","omega-ruby","alpha-sapphire"],
+    originalVersions: ["ruby","sapphire","emerald"],
+    remakes: ["omega-ruby","alpha-sapphire"],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/4"
   },
   sinnoh: {
     id: 4,
     name: "Sinnoh",
     versions: ["diamond","pearl","platinum"],
+    originalVersions: ["diamond","pearl","platinum"],
+    remakes: [],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/5"
   },
   unova: {
     id: 5,
     name: "Unova",
     versions: ["black","white","black-2","white-2"],
+    originalVersions: ["black","white"],
+    remakes: ["black-2","white-2"],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/8"
   },
   kalos: {
     id: 6,
     name: "Kalos",
     versions: ["x","y"],
+    originalVersions: ["x","y"],
+    remakes: [],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/12"
   },
   alola: {
     id: 7,
     name: "Alola",
     versions: ["sun","moon","ultra-sun","ultra-moon"],
+    originalVersions: ["sun","moon"],
+    remakes: ["ultra-sun","ultra-moon"],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/16"
   },
   galar: {
     id: 8,
     name: "Galar",
     versions: ["sword","shield"],
+    originalVersions: ["sword","shield"],
+    remakes: [],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/27"
   },
   paldea: {
     id: 9,
     name: "Paldea",
     versions: ["scarlet","violet"],
+    originalVersions: ["scarlet","violet"],
+    remakes: [],
     pokedexUrl: "https://pokeapi.co/api/v2/pokedex/37"
   }
 };
 
-// --- Cache-funksjon med tidsbegrensning ---
-async function fetchWithCache(url, cacheKey) {
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    try {
-      const { timestamp, data } = JSON.parse(cached);
-      if (Date.now() - timestamp < CACHE_MAX_AGE) {
-        return data;
-      }
-    } catch {
-      // Hvis parsing feiler, fall gjennom og hent på nytt
-    }
-  }
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Fetch failed: ${url}`);
-  const data = await res.json();
-  localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data }));
-  return data;
-}
-
-// --- Cache Pokémon IDer i localStorage ---
-async function getPokemonIdByName(name) {
-  const cacheKey = `pokemonId_${name}`;
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    try {
-      const { timestamp, id } = JSON.parse(cached);
-      if (Date.now() - timestamp < CACHE_MAX_AGE) {
-        return id;
-      }
-    } catch {}
-  }
-
-  const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
-  if (!res.ok) return null;
-  const data = await res.json();
-  localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), id: data.id }));
-  return data.id;
-}
-
-// --- Init app ---
+// Init app
 async function init() {
   currentRegion = versionToRegion[currentVersion];
   renderVersionSelect();
@@ -149,7 +125,7 @@ async function init() {
   await showRegionalDex();
 }
 
-// --- Render versjonsvelger (all spill) ---
+// Render spillversjons-dropdown (viser alle spill)
 function renderVersionSelect() {
   const container = document.getElementById("version-select-container");
   container.innerHTML = "";
@@ -157,6 +133,7 @@ function renderVersionSelect() {
   const select = document.createElement("select");
   select.id = "version-select";
 
+  // Alle versjoner samlet alfabetisk
   const allVersions = Object.keys(versionToRegion).sort();
 
   allVersions.forEach(ver => {
@@ -171,6 +148,7 @@ function renderVersionSelect() {
     currentVersion = select.value;
     localStorage.setItem("currentVersion", currentVersion);
 
+    // Oppdater region ved versjonsskift
     const newRegion = versionToRegion[currentVersion];
     if (newRegion !== currentRegion) {
       currentRegion = newRegion;
@@ -179,9 +157,11 @@ function renderVersionSelect() {
     setSavedLocationIfExists();
     updateCaughtCounter();
 
+    // Hent encounters hvis lokasjon valgt
     const locSelect = document.getElementById("location-select");
     if (locSelect && locSelect.value) await fetchAreaData(locSelect.value);
 
+    // Oppdater dex hvis vist
     if (dexMode === "regional") await showRegionalDex();
     else if (dexMode === "national") await showNationalDex();
   };
@@ -189,17 +169,39 @@ function renderVersionSelect() {
   container.appendChild(select);
 }
 
-// --- Last lokasjoner for region ---
+// Sett lagret lokasjon hvis den finnes
+function setSavedLocationIfExists() {
+  const lastLocation = localStorage.getItem("lastSelectedLocation");
+  const locSelect = document.getElementById("location-select");
+  if (locSelect) {
+    if (lastLocation && allLocations.some(loc => loc.slug === lastLocation)) {
+      locSelect.value = lastLocation;
+      fetchAreaData(lastLocation);
+    } else {
+      locSelect.value = "";
+      clearEncounters();
+    }
+  }
+}
+
+// Last lokasjoner for valgt region, lag dropdown
 async function loadLocations(regionKey) {
-  const data = await fetchWithCache(`https://pokeapi.co/api/v2/region/${regionData[regionKey].id}`, `region_${regionKey}_locations`);
+  const res = await fetch(`https://pokeapi.co/api/v2/region/${regionData[regionKey].id}`);
+  if (!res.ok) {
+    console.error("Klarte ikke hente region data");
+    return;
+  }
+  const data = await res.json();
+
   allLocations = data.locations.map(loc => ({
     name: prettifyName(loc.name),
     slug: loc.name
   }));
+
   renderLocationDropdown(allLocations);
 }
 
-// --- Render lokasjons-dropdown ---
+// Render lokasjons-dropdown
 function renderLocationDropdown(locations) {
   const container = document.getElementById("location-list");
   container.innerHTML = "";
@@ -234,12 +236,6 @@ function renderLocationDropdown(locations) {
 
   container.appendChild(select);
 
-  // Knapp for regional dex
-  const dexBtn = document.createElement("button");
-  dexBtn.textContent = "📘 Regional Pokédex";
-  dexBtn.onclick = () => showRegionalDex();
-  container.appendChild(document.createElement("br"));
-  container.appendChild(dexBtn);
 
   // Knapp for nasjonal dex
   const natDexBtn = document.createElement("button");
@@ -248,46 +244,45 @@ function renderLocationDropdown(locations) {
   container.appendChild(natDexBtn);
 }
 
-// --- Sett lagret lokasjon hvis finnes ---
-function setSavedLocationIfExists() {
-  const lastLocation = localStorage.getItem("lastSelectedLocation");
-  const locSelect = document.getElementById("location-select");
-  if (locSelect) {
-    if (lastLocation && allLocations.some(loc => loc.slug === lastLocation)) {
-      locSelect.value = lastLocation;
-      fetchAreaData(lastLocation);
-    } else {
-      locSelect.value = "";
-      clearEncounters();
-    }
-  }
-}
-
-// --- Tøm encounter-visning ---
 function clearEncounters() {
   const output = document.getElementById("encounters");
   output.innerHTML = "";
 }
 
-// --- Hent encounter data og vis Pokémon for valgt område ---
+// Hjelpefunksjon: hent liste med versjoner å sammenligne mot, basert på valgt spill og region
+function getRelevantVersions() {
+  const region = regionData[currentRegion];
+  if (!region) return [];
+  // Vis original + remake versjoner i encounter-listen
+  return [...region.originalVersions, ...region.remakes];
+}
+
 async function fetchAreaData(slug) {
   const output = document.getElementById("encounters");
   output.innerHTML = "Laster...";
 
-  const locationData = await fetchWithCache(`https://pokeapi.co/api/v2/location/${slug}`, `location_${slug}`);
-  if (!locationData || !locationData.areas || locationData.areas.length === 0) {
+  const locationRes = await fetch(`https://pokeapi.co/api/v2/location/${slug}`);
+  if (!locationRes.ok) {
+    output.innerHTML = "Klarte ikke å hente område data.";
+    return;
+  }
+  const locationData = await locationRes.json();
+
+  if (!locationData.areas || locationData.areas.length === 0) {
     output.innerHTML = "Ingen underområder funnet.";
     return;
   }
 
   const areaSlug = locationData.areas[0].name;
-  const data = await fetchWithCache(`https://pokeapi.co/api/v2/location-area/${areaSlug}`, `location_area_${areaSlug}`);
-  if (!data) {
+
+  const res = await fetch(`https://pokeapi.co/api/v2/location-area/${areaSlug}`);
+  if (!res.ok) {
     output.innerHTML = "Klarte ikke å hente encounter data.";
     return;
   }
+  const data = await res.json();
 
-  const versions = regionData[currentRegion].versions;
+  const versions = getRelevantVersions();
   const versionGroups = {};
   versions.forEach(v => (versionGroups[v] = {}));
 
@@ -300,7 +295,8 @@ async function fetchAreaData(slug) {
         const method = detail.method.name;
         const name = entry.pokemon.name;
 
-        if (!versionGroups[versionName][method]) versionGroups[versionName][method] = {};
+        if (!versionGroups[versionName][method])
+          versionGroups[versionName][method] = {};
 
         if (!versionGroups[versionName][method][name] ||
             versionGroups[versionName][method][name].chance < detail.chance) {
@@ -324,7 +320,7 @@ async function fetchAreaData(slug) {
     const section = document.createElement("div");
     const label = version === currentVersion
       ? `⭐ ${capitalize(version)}`
-      : version === "ruby" ? "🟥 Ruby" : version === "sapphire" ? "🟦 Sapphire" : "🟩 Emerald";
+      : regionData[currentRegion].originalVersions.includes(version) ? `🟥 ${capitalize(version)}` : `🟦 ${capitalize(version)}`;
     section.innerHTML = `<h2>${label}</h2>`;
 
     for (const method of orderedMethods) {
@@ -359,7 +355,6 @@ async function fetchAreaData(slug) {
   }
 }
 
-// --- Formater navn ---
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
@@ -367,7 +362,6 @@ function prettifyName(name) {
   return name.split("-").map(capitalize).join(" ");
 }
 
-// --- Metode-labels ---
 function methodNameToLabel(method) {
   const labels = {
     "walk": "Gress",
@@ -382,7 +376,15 @@ function methodNameToLabel(method) {
   return labels[method] || method;
 }
 
-// --- Sjekk fanget-lista ---
+async function getPokemonIdByName(name) {
+  if (pokemonIdCache[name]) return pokemonIdCache[name];
+  const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  pokemonIdCache[name] = data.id;
+  return data.id;
+}
+
 function getCaughtList() {
   return JSON.parse(localStorage.getItem("caughtList") || "[]");
 }
@@ -397,7 +399,6 @@ function toggleCaught(name) {
   updateCaughtCounter();
 }
 
-// --- Oppdater fanget-teller ---
 function updateCaughtCounter() {
   const counter = document.getElementById("caught-counter");
   if (!counter || !dexEntries.length) return;
@@ -406,7 +407,6 @@ function updateCaughtCounter() {
   counter.textContent = `Fanget: ${caught}/${dexEntries.length} (${percent}%)`;
 }
 
-// --- Formater linje i dex med nummer og checkbox ---
 async function formatLine(name) {
   const id = await getPokemonIdByName(name.toLowerCase());
   if (!id) return "";
@@ -419,59 +419,61 @@ async function formatLine(name) {
     : dexNum.toString().padStart(4, "0");
 
   return `
-    <div class="icon-entry" onclick="toggleCaught('${name}')">
+    <div class="icon-entry">
       <label>
         ${capitalize(name)} - ${dexNumStr}
-        <input type="checkbox" ${checked} onchange="toggleCaught('${name}'); event.stopPropagation();">
+        <input type="checkbox" ${checked} onchange="toggleCaught('${name}')">
       </label><br>
-      <img src="${iconUrl}" alt="${name}" title="${capitalize(name)}" width="128" height="128" onclick="showLocations('${name}'); event.stopPropagation();">
+      <img src="${iconUrl}" alt="${name}" title="${capitalize(name)}" width="128" height="128" onclick="showLocations('${name}')">
     </div>
   `;
 }
 
-// --- Vis regional dex ---
 async function showRegionalDex() {
   dexMode = "regional";
   const output = document.getElementById("encounters");
   output.innerHTML = "Laster regional dex...";
 
-  try {
-    const data = await fetchWithCache(regionData[currentRegion].pokedexUrl, `pokedex_${currentRegion}`);
-    dexEntries = data.pokemon_entries.map(e => e.pokemon_species.name);
-
-    dexNumbers = {};
-    data.pokemon_entries.forEach(entry => {
-      dexNumbers[entry.pokemon_species.name] = entry.entry_number;
-    });
-
-    await renderDex(output, currentRegion);
-  } catch {
+  const dexUrl = regionData[currentRegion].pokedexUrl;
+  const res = await fetch(dexUrl);
+  if (!res.ok) {
     output.innerHTML = "Klarte ikke å hente regional dex.";
+    return;
   }
+
+  const data = await res.json();
+  dexEntries = data.pokemon_entries.map(e => e.pokemon_species.name);
+
+  dexNumbers = {};
+  data.pokemon_entries.forEach(entry => {
+    dexNumbers[entry.pokemon_species.name] = entry.entry_number;
+  });
+
+  renderDex(output, currentRegion);
 }
 
-// --- Vis nasjonal dex ---
 async function showNationalDex() {
   dexMode = "national";
   const output = document.getElementById("encounters");
   output.innerHTML = "Laster nasjonal dex...";
 
-  try {
-    const data = await fetchWithCache("https://pokeapi.co/api/v2/pokedex/1", "pokedex_national");
-    dexEntries = data.pokemon_entries.map(e => e.pokemon_species.name);
-
-    dexNumbers = {};
-    data.pokemon_entries.forEach(entry => {
-      dexNumbers[entry.pokemon_species.name] = entry.entry_number;
-    });
-
-    await renderDex(output, "Nasjonal");
-  } catch {
+  const res = await fetch("https://pokeapi.co/api/v2/pokedex/1");
+  if (!res.ok) {
     output.innerHTML = "Klarte ikke å hente nasjonal dex.";
+    return;
   }
+
+  const data = await res.json();
+  dexEntries = data.pokemon_entries.map(e => e.pokemon_species.name);
+
+  dexNumbers = {};
+  data.pokemon_entries.forEach(entry => {
+    dexNumbers[entry.pokemon_species.name] = entry.entry_number;
+  });
+
+  renderDex(output, "Nasjonal");
 }
 
-// --- Render dex liste ---
 async function renderDex(output, titleRegion) {
   output.innerHTML = `
     <h2>📘 ${dexMode === "regional" ? "Regional Pokédex – " + capitalize(titleRegion) : "Nasjonal Pokédex"}</h2>
@@ -489,7 +491,6 @@ async function renderDex(output, titleRegion) {
   updateCaughtCounter();
 }
 
-// --- Filtrering i dex ---
 function filterDex() {
   const term = document.getElementById("search").value.toLowerCase();
   const dexList = document.getElementById("dex-list");
@@ -499,33 +500,37 @@ function filterDex() {
   });
 }
 
-// --- Vis lokasjoner for Pokémon ---
 async function showLocations(name) {
   if (locationCache[name]) return showLocationPopup(name, locationCache[name]);
 
-  try {
-    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
-    if (!res.ok) return;
-    const data = await res.json();
+  const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
+  if (!res.ok) return;
+  const data = await res.json();
 
-    const locRes = await fetch(data.location_area_encounters);
-    if (!locRes.ok) return;
-    const locData = await locRes.json();
+  const locRes = await fetch(data.location_area_encounters);
+  if (!locRes.ok) return;
+  const locData = await locRes.json();
 
-    const areas = locData
-      .filter(e => e.version_details.some(v => v.version.name === currentVersion))
-      .map(e => e.location_area.name)
-      .map(slug => slug.replace(`${currentRegion}-`, "").replace("-area", "").split("-").map(capitalize).join(" "));
+  const areas = locData
+    .filter(e => e.version_details.some(v => v.version.name === currentVersion))
+    .map(e => e.location_area.name)
+    .map(slug => slug.replace(`${currentRegion}-`, "").replace("-area", "").split("-").map(capitalize).join(" "));
 
-    locationCache[name] = areas;
-    showLocationPopup(name, areas);
-  } catch {}
+  locationCache[name] = areas;
+  showLocationPopup(name, areas);
 }
 
-// --- Vis popup med lokasjoner ---
 function showLocationPopup(name, areas) {
   const formatted = areas.length ? areas.join("\n") : "Ingen lokasjoner funnet.";
   alert(`${capitalize(name)} finnes i:\n\n${formatted}`);
 }
 
 init();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js")
+      .then(reg => console.log("Service Worker registrert:", reg.scope))
+      .catch(err => console.error("Service Worker registrering feilet:", err));
+  });
+}
