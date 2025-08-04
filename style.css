@@ -154,3 +154,17 @@ button:hover {
   box-shadow: 0 0 10px #007aff88;
   outline: none;
 }
+
+.precache-container {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+}
+
+.precache-container button {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 4px;
+}

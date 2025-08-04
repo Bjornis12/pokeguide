@@ -125,7 +125,7 @@ async function init() {
   await showRegionalDex();
 }
 
-// Render spillversjons-dropdown (viser alle spill)
+// Render spillversjons-dropdown (viser alle spill alfabetisk)
 function renderVersionSelect() {
   const container = document.getElementById("version-select-container");
   container.innerHTML = "";
@@ -133,7 +133,6 @@ function renderVersionSelect() {
   const select = document.createElement("select");
   select.id = "version-select";
 
-  // Alle versjoner samlet alfabetisk
   const allVersions = Object.keys(versionToRegion).sort();
 
   allVersions.forEach(ver => {
@@ -148,7 +147,6 @@ function renderVersionSelect() {
     currentVersion = select.value;
     localStorage.setItem("currentVersion", currentVersion);
 
-    // Oppdater region ved versjonsskift
     const newRegion = versionToRegion[currentVersion];
     if (newRegion !== currentRegion) {
       currentRegion = newRegion;
@@ -157,11 +155,9 @@ function renderVersionSelect() {
     setSavedLocationIfExists();
     updateCaughtCounter();
 
-    // Hent encounters hvis lokasjon valgt
     const locSelect = document.getElementById("location-select");
     if (locSelect && locSelect.value) await fetchAreaData(locSelect.value);
 
-    // Oppdater dex hvis vist
     if (dexMode === "regional") await showRegionalDex();
     else if (dexMode === "national") await showNationalDex();
   };
@@ -235,7 +231,6 @@ function renderLocationDropdown(locations) {
   });
 
   container.appendChild(select);
-
 
   // Knapp for nasjonal dex
   const natDexBtn = document.createElement("button");
@@ -419,12 +414,12 @@ async function formatLine(name) {
     : dexNum.toString().padStart(4, "0");
 
   return `
-    <div class="icon-entry">
+    <div class="icon-entry" onclick="toggleCaught('${name}')">
       <label>
         ${capitalize(name)} - ${dexNumStr}
-        <input type="checkbox" ${checked} onchange="toggleCaught('${name}')">
+        <input type="checkbox" ${checked} onchange="toggleCaught('${name}'); event.stopPropagation();">
       </label><br>
-      <img src="${iconUrl}" alt="${name}" title="${capitalize(name)}" width="128" height="128" onclick="showLocations('${name}')">
+      <img src="${iconUrl}" alt="${name}" title="${capitalize(name)}" width="128" height="128" onclick="showLocations('${name}'); event.stopPropagation();">
     </div>
   `;
 }
@@ -525,12 +520,34 @@ function showLocationPopup(name, areas) {
   alert(`${capitalize(name)} finnes i:\n\n${formatted}`);
 }
 
+function precacheAll() {
+  if ('serviceWorker' in navigator) {
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE_ALL' });
+      alert('Starter pre-caching av alle filer.');
+    } else {
+      // Vent litt på at service worker blir aktiv før vi sender melding
+      navigator.serviceWorker.ready.then(registration => {
+        if (registration.active) {
+          registration.active.postMessage({ type: 'PRECACHE_ALL' });
+          alert('Starter pre-caching av alle filer.');
+        } else {
+          alert('Service Worker ikke aktiv enda, prøv igjen om litt.');
+        }
+      });
+    }
+  } else {
+    alert('Service Worker ikke støttet i denne nettleseren.');
+  }
+}
+
+
 init();
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js")
-      .then(reg => console.log("Service Worker registrert:", reg.scope))
-      .catch(err => console.error("Service Worker registrering feilet:", err));
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/js/service-worker.js')
+      .then(reg => console.log('Service Worker registrert:', reg.scope))
+      .catch(err => console.error('Service Worker registrering feilet:', err));
   });
 }

@@ -1,38 +1,43 @@
 const CACHE_NAME = "poke-guide-cache-v1";
-const ASSETS_TO_CACHE = [
+const PRECACHE_URLS = [
   "/",
   "/index.html",
   "/style.css",
   "/js/app.js",
-  // legg til eventuelle andre filer du bruker (manifest, bilder, ikoner, etc.)
+  // Legg til flere filer du vil pre-cache her, f.eks. manifest, bilder osv.
 ];
 
-// Install event - cache filer
+// Install event - ingen automatisk caching, bare aktiver service worker umiddelbart
 self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
+  self.skipWaiting();
 });
 
-// Activate event - cleanup gammel cache hvis nødvendig
+// Activate event - fjern gamle cacher
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys => 
+    caches.keys().then(keys =>
       Promise.all(
         keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       )
     )
   );
+  self.clients.claim();
 });
 
-// Fetch event - hent fra cache eller nettverk
+// Fetch event - bruk cache først, fallback til nettverk
 self.addEventListener("fetch", event => {
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
-      if (cachedResponse) return cachedResponse;
-      return fetch(event.request);
+      return cachedResponse || fetch(event.request);
     })
   );
+});
+
+// Lytt på melding fra klient for å pre-cache alle filer
+self.addEventListener("message", event => {
+  if (event.data && event.data.type === "PRECACHE_ALL") {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS))
+    );
+  }
 });

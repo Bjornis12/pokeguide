@@ -9,11 +9,21 @@
 </head>
 <body>
   <h1>Pokémon Guide</h1>
-
+  <div class="precache-container">
+  <button onclick="precacheAll()">Pre-cache alt for offline bruk</button>
+</div>
   <label for="version-select">Spill:</label>
   <div id="version-select-container"></div>
 
   <button onclick="showRegionalDex()">📘 Regional Pokédex</button>
+  <br /><br />
+  <script>
+function precacheAll() {
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({type: 'PRECACHE_ALL'});
+  }
+}
+</script>
 
   <h2>Områder</h2>
   <div id="location-list"></div>
@@ -22,5 +32,7 @@
   <div id="encounters"></div>
 
   <script src="js/app.js"></script>
+
+
 </body>
 </html>
